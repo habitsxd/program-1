@@ -25,10 +25,18 @@ int main(){
     int servrsp2;
     int mem;
     //data section end
+    typedef struct{
+        char client_name[80];
+        char client_fifo[80];
+        int sys_call;
+        int pid;
+        char* input_text;
+        int input_num;
+        int mem;    
+    } *Client;
     
-    start:
     ///begin program
-    printf("welcome! connecting to server!\n");
+    printf("welcome!\n");
 
     //create client specific fifo name
     char fifo_name[80];
@@ -36,38 +44,40 @@ int main(){
     printf("please enter a client name: ");//prompt for client name
     fgets(client_name,80,stdin);
     strcat(fifo_name,client_name);
+    pid = getpid();
+    Client c = malloc(sizeof(Client));
+    strcpy(c -> client_fifo, fifo_name);
+    c -> pid = pid;
+
     //printf("%s",fifo_name);
 
     //get pid to send to server
-    pid = getpid();
 
     //open server fifo, write client fifo name, client name, and pid to server
-    fd = open(server,O_WRONLY);
-    if(write(fd,&pid,sizeof(int)) == -1){
-        return 3;
-    }
-    if(write(fd,fifo_name, 80) == -1){
-        return 3;
-    }
-     if(write(fd,client_name, 80) == -1){
-        return 3;
-    }
-    close(fd);
-    printf("finished writing client data!\n");
+    // int size = sizeof(Client);
+    // if(write(fd,&size,sizeof(int)) == -1){
+    //     return 3;
+    // }
+    // fd = open(server,O_WRONLY);
+    // if(write(fd,&c,sizeof(Client)) == -1){
+    //     return 3;
+    // }
+    // close(fd);
+    // printf("finished writing client data!\n");
 
     //make client specific fifo
-    if(mkfifo(fifo_name,0777) == -1){
+    if(mkfifo(c -> client_fifo,0777) == -1){
         if(errno != EEXIST){
             printf("Error: Fifo exists.\n");
             return EXIT_FAILURE;
         }
     }
-    //open client fifo
-    fd1 = open(fifo_name,O_RDONLY);
-    char dummy[80];
-    read(fd1,dummy,80);
-    printf("%s", dummy);
-    close(fd1);
+    // //open client fifo
+    // fd1 = open(c -> client_fifo,O_RDONLY);
+    // char dummy[80];
+    // read(fd1,dummy,80);
+    // printf("%s", dummy);
+    // close(fd1);
 
     //enter loop to take system calls
     while(1){
@@ -78,19 +88,28 @@ int main(){
         if(client_choice == 1){
             printf("What system call would you like to make? (-1-4): ");
             scanf("%d", &server_call);
-            write(fd,&server_call,sizeof(int));
-            close(fd);
+            c -> sys_call = server_call;
+            // write(fd,&c,sizeof(int));
+            // close(fd);
 
             //send data according to server call
             switch(server_call){
+                case 0:
+                    //connect to server
+                    fd = open(server, O_WRONLY);
+                    c -> sys_call = 0;
+                    write(fd, &c, sizeof(Client));
+                    close(fd);
+                    printf("Connecting to server...\n");
                 case 1:
                     //send int value to convert to text
                     fd = open(server, O_WRONLY);
                     printf("Enter a number 0-9: ");
                     scanf("%d", &inpt1);
-                    write(fd, &inpt1, sizeof(int));
+                    c -> input_num = inpt1;
+                    write(fd, &c, sizeof(Client));
                     close(fd);
-                    fd1 = open(fifo_name, O_RDONLY);
+                    fd1 = open(c -> client_fifo, O_RDONLY);
                     read(fd1, server_response, 80);
                     close(fd1);
                     printf("Converted number is: %s\n", server_response);
@@ -100,9 +119,10 @@ int main(){
                     fd = open(server, O_WRONLY);
                     printf("Enter a text number: ");
                     scanf("%s", inpt2);
-                    write(fd,inpt2,10);
+                    c -> input_text = inpt2;
+                    write(fd,&c,sizeof(Client));
                     close(fd);
-                    fd1 = open(fifo_name,O_RDONLY);
+                    fd1 = open(c -> client_fifo,O_RDONLY);
                     read(fd1, &servrsp2, sizeof(int));
                     close(fd1);
                     printf("Converted number is: %d\n", servrsp2);
@@ -112,7 +132,8 @@ int main(){
                     fd = open(server, O_WRONLY);
                     printf("Enter an integer value to store: ");
                     scanf("%d", &mem);
-                    write(fd, &mem, sizeof(int));
+                    c -> mem = mem;
+                    write(fd, &c, sizeof(Client));
                     close(fd);
                     break;
                 case 4:
@@ -133,8 +154,8 @@ int main(){
             //send exit server call to server
             printf("Exiting the client!\n");
             fd = open(server, O_WRONLY);
-            int serv_call = 0;
-            write(fd, &serv_call, sizeof(int));
+            c -> sys_call = 5;
+            write(fd, &c, sizeof(int));
             close(fd);
             exit(0);
         }
@@ -142,8 +163,8 @@ int main(){
         else{
             printf("Exiting the client, and terminating server!\n");
             fd = open(server, O_WRONLY);
-            int serv_call = -1;
-            write(fd, &serv_call, sizeof(int));
+            c -> sys_call = -1;
+            write(fd, &c, sizeof(int));
             close(fd);
             exit(0);
         }

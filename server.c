@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <time.h>
 
+#define MAX_CLIENTS 10
+
 char* num_to_text(int num);
 int text_to_num(char* text);
 
@@ -17,10 +19,6 @@ int main(){
     int fd;
     int fd1;
     int pid;
-    char client_fifo[80];
-    char client_name[80];
-    int client_pid;
-    int server_call;
     char* server = "/tmp/server";
     int client_input;
     char clientinpt[10];
@@ -29,8 +27,21 @@ int main(){
     int mem;
     char mem2[80];
     int type;
+    int clients[MAX_CLIENTS];
+    int sim_pid = 0;
+    int size;
+    int server_call;
     //data section end
-
+    typedef struct{
+      //  char client_name[80];
+        char client_name[80];
+        char client_fifo[80];
+        int sys_call;
+        int pid;
+        char* input_text;
+        int input_num; 
+        int mem;     
+    } *Client;
     //make server fifo
     if(mkfifo(server,0777) == -1){
         if(errno != EEXIST){
@@ -38,53 +49,50 @@ int main(){
             return EXIT_FAILURE;
         }
     }
-
-    //read client input
-    printf("connecting to client!\n");
-    fd = open(server,O_RDONLY);
-    if(read(fd,&pid,sizeof(int)) == -1){
-        return 3;
-    }
-    if(read(fd,client_fifo,80) == -1){
-        return 3;
-    }
-    if(read(fd,client_name,80) == -1){
-        return 3;
-    }
-    //output client data from server fifo
-    printf("finished reading client data!\n");
-    printf("Client pid: %d\n", pid);
-    printf("Client fifo name: %s\n", client_fifo);
-    printf("Client number: %s\n", client_name);
-    close(fd);
-
-    //connect to client fifo
-    printf("Connecting to client-specific fifo!\n");
-    fd1 = open(client_fifo,O_WRONLY);
-    //write to client fifo (test only will be deleted)
-    char dummy[80];
-    printf("please enter a message to client: ");
-    fgets(dummy,80,stdin);
-    write(fd,dummy,80);
-    close(fd1);
-
     //take system calls
     while(1){
-        fd = open(server, O_RDONLY);
-        if(read(fd,&server_call,sizeof(int)) == -1){
-        return 3;
+        //read client input
+        Client client;
+        printf("connecting to client!\n");
+        fd = open(server,O_RDONLY);
+        // if(read(fd,&size,sizeof(int)) == -1){
+        //     return 3;
+        // }
+        if(read(fd,client, sizeof(Client)) == -1){
+            return 3;
         }
+        // if(read(fd, client -> client_name,80) == -1){
+        //     return 3;
+        // }
+        //output client data from server fifo
+        printf("finished reading client data!\n");
+        printf("Client pid: %d\n", client -> pid);
+        printf("Client fifo name: %s\n", client -> client_fifo);
+        // printf("Client number: %s\n", client -> client_name);
         close(fd);
-        switch(server_call){
+
+        //connect to client fifo
+        printf("Connecting to client-specific fifo!\n");
+        // fd1 = open(client -> client_fifo,O_WRONLY);
+        // //write to client fifo (test only will be deleted)
+        // char dummy[80];
+        // printf("please enter a message to client: ");
+        // fgets(dummy,80,stdin);
+        // write(fd,dummy,80);
+        // close(fd1);
+        // fd = open(server, O_RDONLY);
+        // if(read(fd,&server_call,sizeof(int)) == -1){
+        // return 3;
+        // }
+        // close(fd);
+        switch(client -> sys_call){
             case 1:
                 //number to text case
-                printf("Recieved syscall 1 (number to text) request from client %s with pid %d.\n", client_name, pid); 
-                fd = open(server, O_RDONLY);
-                read(fd, &client_input, sizeof(int));
-                close(fd);
+                printf("Recieved syscall 1 (number to text) request from client with pid %d.\n", pid); 
+                //fd = open(server, O_RDONLY);
                 //convert integer to text and send back to client
-                fd1 = open(client_fifo, O_WRONLY);
-                str = num_to_text(client_input);
+                fd1 = open(client -> client_fifo, O_WRONLY);
+                str = num_to_text(client -> input_num );
                 strcpy(server_response, str);
                 write(fd1, server_response, 80);
                 close(fd1);
@@ -93,12 +101,12 @@ int main(){
                 break;
             case 2:
                 //text to number case
-                printf("Recieved syscall 2 (text to number) request from client %s with pid %d.\n", client_name, pid); 
-                fd = open(server, O_RDONLY);
-                read(fd,clientinpt, 10);
-                close(fd);
-                int num = text_to_num(clientinpt);
-                fd1 = open(client_fifo, O_WRONLY);
+                printf("Recieved syscall 2 (text to number) request from client %s with pid %d.\n", client -> client_name, pid); 
+                // fd = open(server, O_RDONLY);
+                // read(fd,clientinpt, 10);
+                // close(fd);
+                int num = text_to_num(client -> input_text);
+                fd1 = open(client -> client_fifo, O_WRONLY);
                 write(fd1, &num, sizeof(int));
                 close(fd1);
                 printf("Converted number is: %d\n", num);
@@ -106,29 +114,30 @@ int main(){
                 break;
             case 3:
                 //store value in the server
-                printf("Recieved syscall 3 (store) request from client %s with pid %d.\n", client_name, pid);
-                fd = open(server, O_RDONLY);
-                read(fd, &mem, sizeof(int));
-                close(fd);
-                printf("Value %d stored!\n", mem);
+                printf("Recieved syscall 3 (store) request from client %s with pid %d.\n", client -> client_name, pid);
+                // fd = open(server, O_RDONLY);
+                // read(fd, &mem, sizeof(int));
+                // close(fd);
+                mem = client -> mem;
+                printf("Value %d stored!\n", client -> input_num);
                 printf("Waiting for next system call...\n");
                 break;
             case 4:
                 //recall stored value
-                printf("Recieved syscall 4 (recall) request from client %s with pid %d.\n", client_name, pid);
-                fd1 = open(client_fifo, O_WRONLY);
+                printf("Recieved syscall 4 (recall) request from client %s with pid %d.\n", client -> client_name, pid);
+                fd1 = open(client -> client_fifo, O_WRONLY);
                 write(fd, &mem, sizeof(int));
                 close(fd1);
                 printf("Value %d recalled!\n", mem);
                 printf("Waiting for next system call...\n"); 
                 break;
-            case 0:
-                printf("Recieved syscall 0 (EXIT) request from client %s with pid %d.\n", client_name, pid);
+            case 5:
+                printf("Recieved syscall 0 (EXIT) request from client %s with pid %d.\n", client -> client_name, pid);
                 printf("Disconnecting from client!\n");
                 printf("Waiting for new client.....");
                 break;
             case -1:
-                printf("Recieved syscall -1 (TERMINATE) request from client %s with pid %d.\n", client_name, pid);
+                printf("Recieved syscall -1 (TERMINATE) request from client %s with pid %d.\n", client -> client_name, pid);
                 printf("Terminating server....");
                 exit(0);
             default:
@@ -217,3 +226,10 @@ int text_to_num(char* text){
     return num;
     
 }
+
+
+        
+
+
+    
+
